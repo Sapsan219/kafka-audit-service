@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"audit-service/internal/config"
+	"audit-service/internal/consumer"
 	"audit-service/internal/handler"
 	"audit-service/internal/producer"
+	"audit-service/internal/replay"
 	"audit-service/internal/repository"
 	"audit-service/internal/service"
 
@@ -51,7 +53,29 @@ func main() {
 
 	auditRepository := repository.NewAuditRepository(pool)
 	auditService := service.NewAuditService(auditRepository, eventProducer)
-	httpHandler := handler.New(auditService, log)
+	statsReplayer, err := replay.New(cfg.KafkaBrokers, cfg.KafkaTopic, auditRepository)
+	if err != nil {
+		log.Error("connect Kafka replay consumer", "error", err)
+		os.Exit(1)
+	}
+	defer statsReplayer.Close()
+	httpHandler := handler.New(auditService, statsReplayer, log)
+
+	analyticsConsumer, err := consumer.New(
+		cfg.KafkaBrokers,
+		cfg.KafkaGroupID,
+		cfg.KafkaTopic,
+		cfg.KafkaBatchSize,
+		cfg.CommitInterval,
+		cfg.AnalyticsInterval,
+		auditRepository,
+		log,
+	)
+	if err != nil {
+		log.Error("connect Kafka consumer", "error", err)
+		os.Exit(1)
+	}
+	defer analyticsConsumer.Close()
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -63,6 +87,13 @@ func main() {
 		log.Info("HTTP server started", "address", cfg.HTTPAddr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("HTTP server failed", "error", err)
+			stop()
+		}
+	}()
+
+	go func() {
+		if err := analyticsConsumer.Run(ctx); err != nil {
+			log.Error("analytics consumer failed", "error", err)
 			stop()
 		}
 	}()
