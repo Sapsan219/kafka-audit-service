@@ -44,7 +44,7 @@ services:
     image: postgres:16
     container_name: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: audit
       POSTGRES_USER: audit
@@ -57,6 +57,28 @@ services:
       timeout: 3s
       retries: 10
       start_period: 5s
+
+  postgres-init:
+    image: postgres:16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: audit
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - postgres
+      - -U
+      - audit
+      - -d
+      - audit
+      - -f
+      - /migrations/001_init.sql
 
 volumes:
   postgres_data:
