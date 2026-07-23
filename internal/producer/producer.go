@@ -47,13 +47,11 @@ func (p *Producer) SendEvent(ctx context.Context, event domain.Event) error {
 		Value: sarama.ByteEncoder(value),
 	}
 
-	partition, offset, err := p.client.SendMessage(message)
+	_, _, err = p.client.SendMessage(message)
 	if err != nil {
 		return fmt.Errorf("send Kafka message: %w", err)
 	}
 
-	_ = partition
-	_ = offset
 	return nil
 }
 

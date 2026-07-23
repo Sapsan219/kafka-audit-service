@@ -17,6 +17,15 @@ type StatsRepository interface {
 	RefreshStatsCache(context.Context, time.Time, time.Time) error
 }
 
+type Config struct {
+	Brokers           []string
+	GroupID           string
+	Topic             string
+	BatchSize         int
+	CommitInterval    time.Duration
+	AnalyticsInterval time.Duration
+}
+
 type Consumer struct {
 	group   sarama.ConsumerGroup
 	topic   string
@@ -24,12 +33,7 @@ type Consumer struct {
 }
 
 func New(
-	brokers []string,
-	groupID string,
-	topic string,
-	batchSize int,
-	commitInterval time.Duration,
-	analyticsInterval time.Duration,
+	settings Config,
 	repository StatsRepository,
 	log *slog.Logger,
 ) (*Consumer, error) {
@@ -38,22 +42,22 @@ func New(
 	cfg.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRoundRobin()
 	cfg.Consumer.Offsets.Initial = sarama.OffsetOldest
 	cfg.Consumer.Offsets.AutoCommit.Enable = true
-	cfg.Consumer.Offsets.AutoCommit.Interval = commitInterval
-	cfg.ChannelBufferSize = batchSize
+	cfg.Consumer.Offsets.AutoCommit.Interval = settings.CommitInterval
+	cfg.ChannelBufferSize = settings.BatchSize
 
-	group, err := sarama.NewConsumerGroup(brokers, groupID, cfg)
+	group, err := sarama.NewConsumerGroup(settings.Brokers, settings.GroupID, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create Kafka consumer group: %w", err)
 	}
 
 	return &Consumer{
 		group: group,
-		topic: topic,
+		topic: settings.Topic,
 		handler: &groupHandler{
 			repository:        repository,
 			log:               log,
-			analyticsInterval: analyticsInterval,
-			batchSize:         batchSize,
+			analyticsInterval: settings.AnalyticsInterval,
+			batchSize:         settings.BatchSize,
 		},
 	}, nil
 }

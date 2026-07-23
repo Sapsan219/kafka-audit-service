@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,11 +24,16 @@ import (
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("service failed", "error", err)
+		os.Exit(1)
+	}
+}
 
+func run(log *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -35,19 +41,16 @@ func main() {
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Error("connect to PostgreSQL", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
 	defer pool.Close()
 	if err := pool.Ping(ctx); err != nil {
-		log.Error("ping PostgreSQL", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("ping PostgreSQL: %w", err)
 	}
 
 	eventProducer, err := producer.NewProducer(cfg.KafkaBrokers, cfg.KafkaTopic)
 	if err != nil {
-		log.Error("connect to Kafka", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to Kafka: %w", err)
 	}
 	defer eventProducer.Close()
 
@@ -55,25 +58,25 @@ func main() {
 	auditService := service.NewAuditService(auditRepository, eventProducer)
 	statsReplayer, err := replay.New(cfg.KafkaBrokers, cfg.KafkaTopic, auditRepository)
 	if err != nil {
-		log.Error("connect Kafka replay consumer", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect Kafka replay consumer: %w", err)
 	}
 	defer statsReplayer.Close()
 	httpHandler := handler.New(auditService, statsReplayer, log)
 
 	analyticsConsumer, err := consumer.New(
-		cfg.KafkaBrokers,
-		cfg.KafkaGroupID,
-		cfg.KafkaTopic,
-		cfg.KafkaBatchSize,
-		cfg.CommitInterval,
-		cfg.AnalyticsInterval,
+		consumer.Config{
+			Brokers:           cfg.KafkaBrokers,
+			GroupID:           cfg.KafkaGroupID,
+			Topic:             cfg.KafkaTopic,
+			BatchSize:         cfg.KafkaBatchSize,
+			CommitInterval:    cfg.CommitInterval,
+			AnalyticsInterval: cfg.AnalyticsInterval,
+		},
 		auditRepository,
 		log,
 	)
 	if err != nil {
-		log.Error("connect Kafka consumer", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect Kafka consumer: %w", err)
 	}
 	defer analyticsConsumer.Close()
 
@@ -102,7 +105,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownPeriod)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Error("HTTP server shutdown", "error", err)
+		return fmt.Errorf("shutdown HTTP server: %w", err)
 	}
 	log.Info("service stopped")
+	return nil
 }

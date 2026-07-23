@@ -41,14 +41,14 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/rebuild-stats", h.rebuildStats)
 	mux.Handle("GET /swagger/", http.FileServer(http.FS(swaggerFiles)))
 	return mux
-} //маршруты
+}
 
 type createAuditRequest struct {
 	UserID     string          `json:"user_id"`
 	Action     string          `json:"action"`
 	ResourceID string          `json:"resource_id"`
 	Meta       json.RawMessage `json:"meta"`
-} //стуктура запроса
+}
 
 func (h *Handler) createAudit(w http.ResponseWriter, r *http.Request) {
 	var request createAuditRequest
@@ -57,7 +57,7 @@ func (h *Handler) createAudit(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
-	} //чтение
+	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "request body must contain exactly one JSON object")
 		return
