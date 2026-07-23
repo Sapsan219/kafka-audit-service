@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,6 +13,9 @@ import (
 	"audit-service/internal/domain"
 	"audit-service/internal/service"
 )
+
+//go:embed swagger/*
+var swaggerFiles embed.FS
 
 type Handler struct {
 	audit    *service.AuditService
@@ -34,6 +38,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/audit", h.auditHistory)
 	mux.HandleFunc("GET /api/stats", h.auditStats)
 	mux.HandleFunc("POST /api/admin/rebuild-stats", h.rebuildStats)
+	mux.Handle("GET /swagger/", http.FileServer(http.FS(swaggerFiles)))
 	return mux
 } //маршруты
 
